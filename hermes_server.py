@@ -12,6 +12,8 @@ import httpx
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
+
+import security
 from pydantic import BaseModel
 
 BASE = Path(__file__).parent
@@ -38,6 +40,7 @@ class UTF8JSONResponse(JSONResponse):
 
 
 app = FastAPI(title="Hermès — assistant réunion & entretien", default_response_class=UTF8JSONResponse)
+security.install(app, ("/chat", "/meeting", "/interview", "/mail"))
 
 
 class ChatIn(BaseModel):

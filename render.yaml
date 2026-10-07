@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: hermes-assistant
+    runtime: docker
+    plan: free
+    healthCheckPath: /healthz
+    envVars:
+      - key: APP_PASSWORD      # à saisir dans le tableau de bord Render (jamais dans Git)
+        sync: false
+      - key: ANTHROPIC_API_KEY # sans clé, l'IA ne répond pas (Ollama n'existe pas en ligne)
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: RATE_LIMIT_PER_HOUR
+        value: "30"
