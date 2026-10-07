@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Hermès · Assistant réunion & entretien</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--tx:#1b1f24;--mut:#6b7380;--ac:#5b4bdb;--bd:#e2e5ea;--ok:#1a9d5c;--ko:#d23b3b}
+@media(prefers-color-scheme:dark){:root{--bg:#14161a;--card:#1d2026;--tx:#e8eaee;--mut:#98a0ad;--ac:#8b7dff;--bd:#2c313a}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.5 system-ui,Segoe UI,sans-serif}
+header{display:flex;align-items:center;gap:12px;padding:14px 20px;background:var(--card);border-bottom:1px solid var(--bd);flex-wrap:wrap}
+h1{font-size:18px;margin:0;flex:1}
+.dot{width:10px;height:10px;border-radius:50%;background:var(--ko);display:inline-block;margin-right:6px}
+.dot.on{background:var(--ok)}
+select,textarea,input,button{font:inherit;color:var(--tx);background:var(--bg);border:1px solid var(--bd);border-radius:8px;padding:8px 10px}
+nav{display:flex;gap:6px;padding:12px 20px 0;max-width:900px;margin:auto}
+nav button{border-radius:8px 8px 0 0;border-bottom:none;cursor:pointer;background:transparent;color:var(--mut)}
+nav button.act{background:var(--card);color:var(--ac);font-weight:600}
+main{max-width:900px;margin:auto;padding:0 20px 40px}
+.panel{display:none;background:var(--card);border:1px solid var(--bd);border-radius:0 12px 12px 12px;padding:18px}
+.panel.act{display:block}
+textarea{width:100%;min-height:150px;resize:vertical}
+.row{display:flex;gap:10px;margin:10px 0;flex-wrap:wrap;align-items:center}
+.row input{flex:1;min-width:140px}
+button.go{background:var(--ac);color:#fff;border:none;cursor:pointer;padding:9px 18px;font-weight:600}
+button.go:disabled{opacity:.5}
+.out{white-space:pre-wrap;margin-top:14px;padding:14px;border:1px solid var(--bd);border-radius:10px;min-height:20px;background:var(--bg)}
+.out:empty{display:none}
+.err{color:var(--ko)}
+.small{color:var(--mut);font-size:13px}
+button.ghost{cursor:pointer}
+button.rec{background:var(--ko);color:#fff;border-color:var(--ko)}
+button.ok{border-color:var(--ok);color:var(--ok);font-weight:600}
+</style>
+</head>
+<body>
+<header>
+  <h1>🪽 Hermès · Assistant réunion &amp; entretien</h1>
+  <span id="st" class="small"><span class="dot"></span>…</span>
+  <select id="prov" title="Fournisseur LLM">
+    <option value="">Fournisseur par défaut</option>
+    <option value="anthropic">Claude (Anthropic)</option>
+    <option value="openai">OpenAI</option>
+    <option value="ollama">Hermes local (Ollama)</option>
+  </select>
+</header>
+<nav>
+  <button class="act" data-t="meet">📝 Réunion</button>
+  <button data-t="q">🎯 Questions d'entretien</button>
+  <button data-t="fb">💬 Coaching de réponse</button>
+  <button data-t="chat">🤖 Chat libre</button>
+</nav>
+<main>
+  <section id="meet" class="panel act">
+    <p class="small">Colle la transcription ou tes notes de réunion.</p>
+    <textarea id="meet-in" placeholder="Transcription de la réunion…"></textarea>
+    <div class="row"><button class="go" data-run="meet">Résumer</button><button class="ghost" data-copy="meet-out">Copier</button></div>
+    <div id="meet-out" class="out"></div>
+  </section>
+  <section id="q" class="panel">
+    <div class="row"><input id="q-role" placeholder="Poste (ex. Chef de projet digital)"><input id="q-n" type="number" min="1" max="20" value="8" style="max-width:90px"></div>
+    <textarea id="q-ctx" style="min-height:90px" placeholder="Contexte : entreprise, compétences clés, CV du candidat…"></textarea>
+    <div class="row"><button class="go" data-run="q">Générer les questions</button><button class="ghost" data-copy="q-out">Copier</button></div>
+    <div id="q-out" class="out"></div>
+  </section>
+  <section id="fb" class="panel">
+    <p class="small">Écris la question posée puis la réponse du candidat.</p>
+    <textarea id="fb-in" placeholder="Question : …&#10;Réponse : …"></textarea>
+    <div class="row"><button class="go" data-run="fb">Analyser</button><button class="ghost" data-copy="fb-out">Copier</button></div>
+    <div id="fb-out" class="out"></div>
+  </section>
+  <section id="chat" class="panel">
+    <textarea id="chat-in" style="min-height:100px" placeholder="Pose n'importe quelle question…"></textarea>
+    <div class="row"><button class="go" data-run="chat">Envoyer</button><button class="ghost" data-copy="chat-out">Copier</button></div>
+    <div id="chat-out" class="out"></div>
+  </section>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('nav button,.panel').forEach(e=>e.classList.remove('act'));
+  b.classList.add('act');$(b.dataset.t).classList.add('act');
+});
+document.querySelectorAll('[data-copy]').forEach(b=>b.onclick=()=>navigator.clipboard.writeText($(b.dataset.copy).textContent));
+const jobs={
+  meet:()=>['/meeting/summarize',{text:$('meet-in').value},'summary'],
+  q:()=>['/interview/questions',{role:$('q-role').value,context:$('q-ctx').value,n:+$('q-n').value||8},'questions'],
+  fb:()=>['/interview/feedback',{text:$('fb-in').value},'feedback'],
+  chat:()=>['/chat',{prompt:$('chat-in').value},'answer'],
+};
+document.querySelectorAll('[data-run]').forEach(b=>b.onclick=async()=>{
+  const k=b.dataset.run,out=$(k+'-out'),[url,body,field]=jobs[k]();
+  if(k!=='q'&&!Object.values(body)[0].trim()||k==='q'&&!body.role.trim()){out.textContent='Remplis d\'abord le champ.';return}
+  if($('prov').value)body.provider=$('prov').value;
+  b.disabled=true;out.className='out';out.textContent='Hermès réfléchit…';
+  try{
+    const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const j=await r.json();
+    if(!r.ok)throw new Error(j.detail||r.status);
+    out.textContent=j[field];
+  }catch(e){out.className='out err';out.textContent='Erreur : '+e.message}
+  b.disabled=false;
+});
+/* ---------- Voix ---------- */
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+let rec=null,recBtn=null;
+function dictate(ta,btn){
+  if(!SR){alert('La dictée vocale nécessite Chrome ou Edge.');return}
+  if(rec){rec.stop();return}
+  rec=new SR();rec.lang='fr-FR';rec.continuous=true;rec.interimResults=false;
+  recBtn=btn;btn.textContent='⏹ Arrêter';btn.classList.add('rec');
+  rec.onresult=e=>{for(let i=e.resultIndex;i<e.results.length;i++)if(e.results[i].isFinal)ta.value+=(ta.value&&!ta.value.endsWith(' ')?' ':'')+e.results[i][0].transcript.trim()};
+  rec.onerror=e=>{if(e.error==='not-allowed')alert('Autorise le micro dans le navigateur.')};
+  rec.onend=()=>{recBtn.textContent='🎤 Dicter';recBtn.classList.remove('rec');rec=null};
+  rec.start();
+}
+function speak(text,btn){
+  const s=speechSynthesis;
+  if(s.speaking){s.cancel();return}
+  if(!text.trim())return;
+  const u=new SpeechSynthesisUtterance(text);u.lang='fr-FR';
+  const v=s.getVoices().find(v=>v.lang.startsWith('fr'));if(v)u.voice=v;
+  u.onend=()=>btn.textContent='🔊 Lire';btn.textContent='⏹ Stop';s.speak(u);
+}
+/* ---------- Validation par mail ---------- */
+let MAIL={ready:false,to:''};
+const titles={meet:'Compte rendu de réunion',q:"Questions d'entretien",fb:"Retour sur réponse d'entretien",chat:'Réponse Hermès'};
+async function validate(k,btn){
+  const out=$(k+'-out'),txt=out.textContent.trim();
+  if(!txt||out.classList.contains('err')||txt==='Hermès réfléchit…'){alert("Génère d'abord un résultat.");return}
+  const to=prompt('Envoyer ce résultat à quelle adresse e-mail ?',MAIL.to);
+  if(!to)return;
+  const subject='Hermès · '+titles[k];
+  if(!MAIL.ready){
+    location.href='mailto:'+encodeURIComponent(to)+'?subject='+encodeURIComponent(subject)+'&body='+encodeURIComponent(txt);
+    return;
+  }
+  if(!confirm('Valider et envoyer à '+to+' ?'))return;
+  btn.disabled=true;
+  try{
+    const r=await fetch('/mail/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({to,subject,body:txt})});
+    const j=await r.json();if(!r.ok)throw new Error(j.detail||r.status);
+    btn.textContent='✅ Envoyé';setTimeout(()=>btn.textContent='✅ Valider & envoyer par mail',4000);
+  }catch(e){alert('Erreur : '+e.message)}
+  btn.disabled=false;
+}
+document.querySelectorAll('.panel').forEach(p=>{
+  const k=p.id,ta=p.querySelector('textarea'),row=[...p.querySelectorAll('.row')].pop();
+  const mk=(label,fn,cls)=>{const b=document.createElement('button');b.className='ghost '+(cls||'');b.textContent=label;b.onclick=()=>fn(b);row.appendChild(b);return b};
+  if(ta)mk('🎤 Dicter',b=>dictate(ta,b));
+  mk('🔊 Lire',b=>speak($(k+'-out').textContent,b));
+  mk('✅ Valider & envoyer par mail',b=>validate(k,b),'ok');
+});
+speechSynthesis.getVoices();
+async function ping(){
+  try{const j=await (await fetch('/health')).json();MAIL={ready:j.mail,to:j.mail_to||''};
+    const k=j.keys;$('st').innerHTML='<span class="dot on"></span>En ligne · Claude '+(k.anthropic?'✓':'✗ clé')+' · OpenAI '+(k.openai?'✓':'✗ clé');
+  }catch{$('st').innerHTML='<span class="dot"></span>Hors ligne'}
+}
+ping();setInterval(ping,15000);
+</script>
+</body>
+</html>
