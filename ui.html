@@ -40,6 +40,7 @@ button.ok{border-color:var(--ok);color:var(--ok);font-weight:600}
   <span id="st" class="small"><span class="dot"></span>…</span>
   <select id="prov" title="Fournisseur LLM">
     <option value="">Fournisseur par défaut</option>
+    <option value="gemini">Gemini (Google)</option>
     <option value="anthropic">Claude (Anthropic)</option>
     <option value="openai">OpenAI</option>
     <option value="ollama">Hermes local (Ollama)</option>
@@ -155,7 +156,9 @@ document.querySelectorAll('.panel').forEach(p=>{
 speechSynthesis.getVoices();
 async function ping(){
   try{const j=await (await fetch('/health')).json();MAIL={ready:j.mail,to:j.mail_to||''};
-    const k=j.keys;$('st').innerHTML='<span class="dot on"></span>En ligne · Claude '+(k.anthropic?'✓':'✗ clé')+' · OpenAI '+(k.openai?'✓':'✗ clé');
+    const k=j.keys;
+    if(j.public){$('prov').hidden=true;$('st').innerHTML='<span class="dot on"></span>Démo publique · IA Gemini '+(k.gemini?'✓':'✗ clé');}
+    else $('st').innerHTML='<span class="dot on"></span>En ligne · Claude '+(k.anthropic?'✓':'✗ clé')+' · OpenAI '+(k.openai?'✓':'✗ clé')+' · Gemini '+(k.gemini?'✓':'✗ clé');
   }catch{$('st').innerHTML='<span class="dot"></span>Hors ligne'}
 }
 ping();setInterval(ping,15000);

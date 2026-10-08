@@ -27,7 +27,12 @@ logging.basicConfig(
 log = logging.getLogger("hermes")
 
 DEFAULT_PROVIDER = os.getenv("DEFAULT_PROVIDER", "anthropic")
+# Mode public (démo en ligne ouverte à tous) : pas de mot de passe, IA gratuite Gemini imposée,
+# taille des entrées et des réponses plafonnée, envoi de mail par le serveur désactivé.
+PUBLIC_MODE = os.getenv("PUBLIC_MODE") == "1"
+MAX_INPUT_CHARS = int(os.getenv("MAX_INPUT_CHARS", "12000"))
 MODELS = {
+    "gemini": os.getenv("GEMINI_MODEL", "gemini-flash-latest"),
     "anthropic": os.getenv("ANTHROPIC_MODEL", "claude-sonnet-5-5"),
     "openai": os.getenv("OPENAI_MODEL", "gpt-4o"),
     "ollama": os.getenv("OLLAMA_MODEL", "hermes3"),  # Hermes (Nous Research) via Ollama local
@@ -66,10 +71,31 @@ class InterviewIn(BaseModel):
 
 async def call_llm(prompt: str, system: str | None, provider: str | None, model: str | None, max_tokens: int) -> str:
     provider = provider or DEFAULT_PROVIDER
+    if PUBLIC_MODE:  # en démo publique, le visiteur ne choisit ni le fournisseur ni le modèle
+        provider, model, max_tokens = "gemini", None, min(max_tokens, 2000)
     model = model or MODELS.get(provider)
     if provider not in MODELS:
         raise HTTPException(400, f"Fournisseur inconnu: {provider}")
+    if len(prompt) > MAX_INPUT_CHARS:
+        raise HTTPException(413, f"Texte trop long : {MAX_INPUT_CHARS} caractères maximum.")
     async with httpx.AsyncClient(timeout=120) as c:
+        if provider == "gemini":
+            key = os.getenv("GEMINI_API_KEY")
+            if not key:
+                raise HTTPException(503, "GEMINI_API_KEY manquante")
+            body = {"contents": [{"role": "user", "parts": [{"text": prompt}]}],
+                    "generationConfig": {"maxOutputTokens": max_tokens, "temperature": 0.5}}
+            if system:
+                body["systemInstruction"] = {"parts": [{"text": system}]}
+            r = await c.post(f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+                             json=body, headers={"x-goog-api-key": key})
+            r.raise_for_status()
+            cands = r.json().get("candidates") or []
+            parts = (cands[0].get("content") or {}).get("parts", []) if cands else []
+            text = "".join(p.get("text", "") for p in parts)
+            if not text.strip():
+                raise HTTPException(502, "L'IA n'a pas renvoyé de réponse. Reformule ta demande.")
+            return text
         if provider == "anthropic":
             key = os.getenv("ANTHROPIC_API_KEY")
             if not key:
@@ -124,6 +150,8 @@ def mail_ready() -> bool:
 @app.post("/mail/send")
 async def mail_send(i: MailIn):
     """Envoie le résultat validé par l'utilisateur (SMTP configuré dans .env)."""
+    if PUBLIC_MODE:
+        raise HTTPException(403, "Envoi de mail désactivé dans la démo publique.")
     if not mail_ready():
         raise HTTPException(503, "SMTP non configuré dans .env (SMTP_HOST, SMTP_USER, SMTP_PASSWORD)")
     if "@" not in i.to:
@@ -160,9 +188,13 @@ def home():
 
 @app.get("/health")
 def health():
+    if PUBLIC_MODE:
+        return {"status": "ok", "public": True, "mail": False, "mail_to": "",
+                "keys": {"gemini": bool(os.getenv("GEMINI_API_KEY"))}}
     return {"status": "ok", "uptime_s": int(time.time() - STARTED), "default_provider": DEFAULT_PROVIDER,
             "mail": mail_ready(), "mail_to": os.getenv("MAIL_TO", ""),
-            "keys": {"anthropic": bool(os.getenv("ANTHROPIC_API_KEY")), "openai": bool(os.getenv("OPENAI_API_KEY"))}}
+            "keys": {"anthropic": bool(os.getenv("ANTHROPIC_API_KEY")), "openai": bool(os.getenv("OPENAI_API_KEY")),
+                     "gemini": bool(os.getenv("GEMINI_API_KEY"))}}
 
 
 @app.post("/chat")
